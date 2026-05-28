@@ -12,13 +12,19 @@ export default async function handler(req, res) {
 
     const INSTANCE = "3F3CE97D54D7521BD014BE824EEE0644";
     const TOKEN = "ACA1A0C6D5CDAD87A4F5ED87";
-    const url = `https://api.z-api.io/instances/${INSTANCE}/token/${TOKEN}/send-text`;
+    const CLIENT_TOKEN = "F17ed351ec4414ecab5c045dd97bc0b93S";
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, message }),
-    });
+    const response = await fetch(
+      `https://api.z-api.io/instances/${INSTANCE}/token/${TOKEN}/send-text`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Client-Token": CLIENT_TOKEN
+        },
+        body: JSON.stringify({ phone, message }),
+      }
+    );
 
     const data = await response.json();
     return res.status(200).json(data);
