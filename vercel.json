@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/send.js": {
+    "api/enviar.js": {
       "memory": 128,
       "maxDuration": 10
     }
