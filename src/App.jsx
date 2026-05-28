@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 function formatPhone(v) {
   v = v.replace(/\D/g, "").slice(0, 11);
@@ -11,21 +11,22 @@ function formatBRL(v) {
 }
 function getToday() { return new Date().toLocaleDateString("pt-BR"); }
 
-const ZAPI_INSTANCE = "3F3CE97D54D7521BD014BE824EEE0644";
-const ZAPI_TOKEN = "ACA1A0C6D5CDAD87A4F5ED87";
+function salvarStorage(key, valor) {
+  try { localStorage.setItem(key, JSON.stringify(valor)); } catch(e) {}
+}
+function carregarStorage(key, padrao) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : padrao; } catch(e) { return padrao; }
+}
 
 async function enviarWhatsApp(whatsapp, mensagem) {
-  const numero = whatsapp.replace(/\D/g, "");
-  const fone = numero.length === 11 ? `55${numero}` : `55${numero}`;
+  const fone = `55${whatsapp.replace(/\D/g, "")}`;
   try {
-    await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${ZAPI_TOKEN}/send-text`, {
+    await fetch("/api/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone: fone, message: mensagem }),
     });
-  } catch(e) {
-    console.error("Erro Z-API:", e);
-  }
+  } catch(e) { console.error("Erro envio:", e); }
 }
 
 const GRUPOS = [
@@ -68,7 +69,7 @@ function applyVars(msg, cl, pagos=0, total=0, hora="") {
 }
 
 function ProgressBar({ atual, total, cor }) {
-  const pct = Math.min(100, Math.round((atual - 1) / total * 100));
+  const pct = Math.min(100, Math.round((atual-1)/total*100));
   return (
     <div style={{marginTop:6}}>
       <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#666",marginBottom:3}}>
@@ -85,16 +86,16 @@ function ProgressBar({ atual, total, cor }) {
 export default function App() {
   const [tab, setTab] = useState("clientes");
   const [grupoAtivo, setGrupoAtivo] = useState("ate18");
-  const [clientes, setClientes] = useState(INIT);
-  const [pagamentos, setPagamentos] = useState({});
-  const [horarios, setHorarios] = useState({...HORARIOS_PADRAO});
-  const [horariosEdit, setHorariosEdit] = useState({ate18:[...HORARIOS_PADRAO.ate18],apos18:[...HORARIOS_PADRAO.apos18]});
-  const [msgGrupo, setMsgGrupo] = useState({ate18:[...MSG_PADRAO_GRUPO.ate18],apos18:[...MSG_PADRAO_GRUPO.apos18]});
-  const [msgGrupoEdit, setMsgGrupoEdit] = useState({ate18:[...MSG_PADRAO_GRUPO.ate18],apos18:[...MSG_PADRAO_GRUPO.apos18]});
-  const [msgConfirmEdit, setMsgConfirmEdit] = useState(MSG_CONFIRM_PADRAO);
-  const [msgConfirmSalva, setMsgConfirmSalva] = useState(MSG_CONFIRM_PADRAO);
-  const [disparos, setDisparos] = useState([]);
-  const [modal, setModal] = useState(null); // "add"|"renovar"|null
+  const [clientes, setClientes] = useState(()=>carregarStorage("cf_clientes", INIT));
+  const [pagamentos, setPagamentos] = useState(()=>carregarStorage("cf_pagamentos", {}));
+  const [horarios, setHorarios] = useState(()=>carregarStorage("cf_horarios", HORARIOS_PADRAO));
+  const [horariosEdit, setHorariosEdit] = useState(()=>carregarStorage("cf_horarios", HORARIOS_PADRAO));
+  const [msgGrupo, setMsgGrupo] = useState(()=>carregarStorage("cf_msggrupo", {ate18:[...MSG_PADRAO_GRUPO.ate18],apos18:[...MSG_PADRAO_GRUPO.apos18]}));
+  const [msgGrupoEdit, setMsgGrupoEdit] = useState(()=>carregarStorage("cf_msggrupo", {ate18:[...MSG_PADRAO_GRUPO.ate18],apos18:[...MSG_PADRAO_GRUPO.apos18]}));
+  const [msgConfirmEdit, setMsgConfirmEdit] = useState(()=>carregarStorage("cf_msgconfirm", MSG_CONFIRM_PADRAO));
+  const [msgConfirmSalva, setMsgConfirmSalva] = useState(()=>carregarStorage("cf_msgconfirm", MSG_CONFIRM_PADRAO));
+  const [disparos, setDisparos] = useState(()=>carregarStorage("cf_disparos", []));
+  const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ nome:"",whatsapp:"",valor:"",ativo:true,grupo:"ate18",mensagens:["","",""],totalParcelas:10,parcelaAtual:1 });
   const [editId, setEditId] = useState(null);
   const [avisoPreview, setAvisoPreview] = useState(0);
@@ -103,6 +104,13 @@ export default function App() {
   const [renovForm, setRenovForm] = useState({ valorEmprestimo:500, valor:"", totalParcelas:10 });
   const [toast, setToast] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+
+  useEffect(()=>salvarStorage("cf_clientes", clientes), [clientes]);
+  useEffect(()=>salvarStorage("cf_pagamentos", pagamentos), [pagamentos]);
+  useEffect(()=>salvarStorage("cf_horarios", horarios), [horarios]);
+  useEffect(()=>salvarStorage("cf_msggrupo", msgGrupo), [msgGrupo]);
+  useEffect(()=>salvarStorage("cf_msgconfirm", msgConfirmSalva), [msgConfirmSalva]);
+  useEffect(()=>salvarStorage("cf_disparos", disparos.slice(0,50)), [disparos]);
 
   function showToast(msg, tipo="ok") { setToast({msg,tipo}); setTimeout(()=>setToast(null),2800); }
 
@@ -148,33 +156,17 @@ export default function App() {
       const msgC = applyVars(msgConfirmSalva, cl, jaPageram, totalAtivos, hora);
       setDisparos(d=>[{id:Date.now()+cl.id,cliente:cl.nome,whatsapp:cl.whatsapp,valor:cl.valor,hora,grupo:cl.grupo,aviso:-1,mensagem:msgC},...d]);
       enviarWhatsApp(cl.whatsapp, msgC);
-
-      // avança parcela
-      const novaParcela = (cl.parcelaAtual||1) + 1;
+      const novaParcela = (cl.parcelaAtual||1)+1;
       const quitou = novaParcela > (cl.totalParcelas||1);
-      setClientes(c=>c.map(x=>x.id===id ? {
-        ...x,
-        parcelaAtual: quitou ? x.totalParcelas : novaParcela,
-        historico: [...(x.historico||[]), { parcela: x.parcelaAtual, valor: x.valor, data: getToday(), hora }]
-      } : x));
-
+      setClientes(c=>c.map(x=>x.id===id?{...x,parcelaAtual:quitou?x.totalParcelas:novaParcela,historico:[...(x.historico||[]),{parcela:x.parcelaAtual,valor:x.valor,data:getToday(),hora}]}:x));
       if (quitou) {
-        setTimeout(()=>{
-          setRenovarCliente(clientes.find(c=>c.id===id));
-          setRenovForm({valorEmprestimo:500,valor:"",totalParcelas:10});
-          setModal("renovar");
-        }, 600);
+        setTimeout(()=>{ setRenovarCliente(clientes.find(c=>c.id===id)); setRenovForm({valorEmprestimo:500,valor:"",totalParcelas:10}); setModal("renovar"); }, 600);
         showToast(`🎉 ${cl.nome} quitou o empréstimo!`);
       } else {
         showToast(`✅ Parcela ${cl.parcelaAtual}/${cl.totalParcelas} — ${cl.nome}!`);
       }
     } else {
-      // estorna parcela
-      setClientes(c=>c.map(x=>x.id===id ? {
-        ...x,
-        parcelaAtual: Math.max(1, (x.parcelaAtual||1)-1),
-        historico: (x.historico||[]).slice(0,-1)
-      } : x));
+      setClientes(c=>c.map(x=>x.id===id?{...x,parcelaAtual:Math.max(1,(x.parcelaAtual||1)-1),historico:(x.historico||[]).slice(0,-1)}:x));
       showToast(`↩ Parcela estornada — ${cl.nome}.`);
     }
   }
@@ -182,21 +174,17 @@ export default function App() {
   function confirmarRenovacao() {
     if (!renovForm.valor||!renovForm.totalParcelas) { showToast("Preencha valor da parcela e total!","erro"); return; }
     const cl = renovarCliente;
-    setClientes(c=>c.map(x=>x.id===cl.id ? {
-      ...x,
-      valor: Number(renovForm.valor),
-      totalParcelas: Number(renovForm.totalParcelas),
-      parcelaAtual: 1,
-      historico: [...(x.historico||[]), { renovacao: true, emprestimo: renovForm.valorEmprestimo, data: getToday() }]
-    } : x));
+    setClientes(c=>c.map(x=>x.id===cl.id?{...x,valor:Number(renovForm.valor),totalParcelas:Number(renovForm.totalParcelas),parcelaAtual:1,historico:[...(x.historico||[]),{renovacao:true,emprestimo:renovForm.valorEmprestimo,data:getToday()}]}:x));
     setPagamentos(p=>({...p,[cl.id]:false}));
     setModal(null); setRenovarCliente(null);
     showToast(`🔄 Empréstimo renovado para ${cl.nome}!`);
   }
 
   function toggleAtivo(id) { setClientes(c=>c.map(cl=>cl.id===id?{...cl,ativo:!cl.ativo}:cl)); }
+
   function salvarMsgGrupo() { setMsgGrupo({ate18:[...msgGrupoEdit.ate18],apos18:[...msgGrupoEdit.apos18]}); showToast("Mensagens do grupo salvas!"); }
   function salvarHorarios() { setHorarios({ate18:[...horariosEdit.ate18],apos18:[...horariosEdit.apos18]}); showToast("Horários salvos!"); }
+
   function dispararGrupo(gid, avisoIdx) {
     const ativos=clientes.filter(c=>c.ativo&&!pagamentos[c.id]&&c.grupo===gid);
     if(!ativos.length){showToast("Nenhum pendente neste grupo.","info");return;}
@@ -205,7 +193,7 @@ export default function App() {
       id:Date.now()+c.id,cliente:c.nome,whatsapp:c.whatsapp,valor:c.valor,hora,grupo:gid,aviso:avisoIdx,
       mensagem:applyVars(getMsgEfetiva(c,avisoIdx),c,0,0,hora),
     }));
-    novos.forEach(m => enviarWhatsApp(m.whatsapp, m.mensagem));
+    novos.forEach(m=>enviarWhatsApp(m.whatsapp, m.mensagem));
     setDisparos(d=>[...novos,...d]);
     showToast(`📤 ${ativos.length} mensagem(ns) — ${AVISO_LABELS[avisoIdx]} disparada(s)!`);
   }
@@ -244,7 +232,6 @@ export default function App() {
 
       <div style={{padding:16}}>
 
-        {/* ── CLIENTES ── */}
         {tab==="clientes" && (
           <div>
             <div style={{display:"flex",gap:8,marginBottom:14}}>
@@ -267,7 +254,7 @@ export default function App() {
             </div>
             {clientesGrupo(grupoAtivo).length===0 && <div style={emptyStyle}>Nenhum cliente neste grupo.</div>}
             {clientesGrupo(grupoAtivo).map(cl=>{
-              const quitou = (cl.parcelaAtual||1) >= (cl.totalParcelas||1) && pagamentos[cl.id];
+              const quitou=(cl.parcelaAtual||1)>=(cl.totalParcelas||1)&&pagamentos[cl.id];
               return (
                 <div key={cl.id} style={{...cardStyle,borderLeft:`4px solid ${quitou?"#ff9800":g.cor}`}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -282,13 +269,11 @@ export default function App() {
                       {quitou&&<span style={{...badgeStyle,background:"#fff3e0",color:"#e65100"}}>🏆 Quitado</span>}
                     </div>
                   </div>
-
                   <ProgressBar atual={cl.parcelaAtual||1} total={cl.totalParcelas||1} cor={g.cor}/>
-
                   <div style={{display:"flex",gap:7,marginTop:10,flexWrap:"wrap"}}>
-                    {quitou ? (
+                    {quitou?(
                       <button onClick={()=>{setRenovarCliente(cl);setRenovForm({valorEmprestimo:500,valor:"",totalParcelas:10});setModal("renovar");}} style={btnSmall("#ff9800")}>🔄 Renovar</button>
-                    ) : (
+                    ):(
                       <button onClick={()=>togglePago(cl.id)} style={btnSmall(pagamentos[cl.id]?"#757575":"#2e7d32")}>
                         {pagamentos[cl.id]?"↩ Estornar":"✅ Dar Baixa"}
                       </button>
@@ -297,9 +282,7 @@ export default function App() {
                     <button onClick={()=>toggleAtivo(cl.id)} style={btnSmall(cl.ativo?"#5e35b1":"#1a73e8")}>{cl.ativo?"⏸ Pausar":"▶ Ativar"}</button>
                     <button onClick={()=>setConfirmDelete(cl.id)} style={btnSmall("#c62828")}>🗑</button>
                   </div>
-
-                  {/* Histórico resumido */}
-                  {(cl.historico||[]).length>0 && (
+                  {(cl.historico||[]).length>0&&(
                     <div style={{marginTop:8,fontSize:11,color:"#888"}}>
                       Último pagamento: {cl.historico.filter(h=>!h.renovacao).slice(-1)[0]?.data||"—"}
                     </div>
@@ -310,7 +293,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── MENSAGENS ── */}
         {tab==="mensagens" && (
           <div>
             <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>Mensagens padrão por grupo</div>
@@ -342,8 +324,7 @@ export default function App() {
               );
             })}
             <button onClick={salvarMsgGrupo} style={{...btnStyle("#2e7d32"),width:"100%",marginBottom:16}}>💾 Salvar Mensagens do Grupo</button>
-
-            <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>✅ Mensagem de confirmação de pagamento</div>
+            <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>✅ Mensagem de confirmação</div>
             <div style={{fontSize:12,color:"#666",marginBottom:10}}>Variáveis extras: <b>{"{hora}"}</b> <b>{"{pagos}"}</b> <b>{"{total}"}</b></div>
             <div style={{...cardStyle,borderLeft:"4px solid #2e7d32"}}>
               <textarea value={msgConfirmEdit} onChange={e=>setMsgConfirmEdit(e.target.value)} rows={5} style={{...inputStyle,resize:"vertical",fontFamily:"sans-serif"}}/>
@@ -355,7 +336,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── DISPAROS ── */}
         {tab==="cobrancas" && (
           <div>
             {GRUPOS.map(gr=>{
@@ -392,7 +372,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── HORÁRIOS ── */}
         {tab==="horarios" && (
           <div>
             {GRUPOS.map(gr=>(
@@ -412,7 +391,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ── RELATÓRIO ── */}
         {tab==="relatorio" && (
           <div>
             <div style={{fontWeight:700,fontSize:16,marginBottom:12}}>📊 Relatório — {getToday()}</div>
@@ -466,7 +444,6 @@ export default function App() {
         )}
       </div>
 
-      {/* MODAL ADD/EDIT */}
       {modal==="add" && (
         <div style={overlayStyle}>
           <div style={{...modalStyle,maxHeight:"90vh",overflowY:"auto"}}>
@@ -527,7 +504,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL RENOVAR */}
       {modal==="renovar" && renovarCliente && (
         <div style={overlayStyle}>
           <div style={{...modalStyle,maxHeight:"90vh",overflowY:"auto"}}>
@@ -536,7 +512,6 @@ export default function App() {
               <div style={{fontWeight:800,fontSize:18,color:"#2e7d32"}}>{renovarCliente.nome} quitou!</div>
               <div style={{fontSize:13,color:"#666",marginTop:4}}>Deseja renovar o empréstimo?</div>
             </div>
-
             <label style={labelStyle}>Valor do empréstimo</label>
             <div style={{display:"flex",gap:8,marginBottom:12}}>
               {VALORES_RENOVACAO.map(v=>(
@@ -549,7 +524,6 @@ export default function App() {
                 }}>{formatBRL(v)}</button>
               ))}
             </div>
-
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:4}}>
               <div>
                 <label style={labelStyle}>Valor da parcela (R$)</label>
@@ -560,16 +534,14 @@ export default function App() {
                 <input type="number" min={1} value={renovForm.totalParcelas} onChange={e=>setRenovForm(f=>({...f,totalParcelas:e.target.value}))} style={inputStyle}/>
               </div>
             </div>
-
             {renovForm.valor && renovForm.totalParcelas && (
               <div style={{background:"#f0f7ff",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:13,color:"#333"}}>
                 💡 {renovForm.totalParcelas}x de {formatBRL(renovForm.valor)} = <b>{formatBRL(renovForm.valor*renovForm.totalParcelas)}</b> total
-                {renovForm.valor*renovForm.totalParcelas > renovForm.valorEmprestimo && (
+                {renovForm.valor*renovForm.totalParcelas>renovForm.valorEmprestimo&&(
                   <span style={{color:"#2e7d32"}}> (+{formatBRL(renovForm.valor*renovForm.totalParcelas-renovForm.valorEmprestimo)} juros)</span>
                 )}
               </div>
             )}
-
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>{setModal(null);setRenovarCliente(null);}} style={{...btnStyle("#757575"),flex:1}}>Agora não</button>
               <button onClick={confirmarRenovacao} style={{...btnStyle("#1a73e8"),flex:1}}>🔄 Renovar</button>
@@ -578,7 +550,6 @@ export default function App() {
         </div>
       )}
 
-      {/* CONFIRM DELETE */}
       {confirmDelete && (
         <div style={overlayStyle}>
           <div style={modalStyle}>
