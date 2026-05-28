@@ -11,6 +11,23 @@ function formatBRL(v) {
 }
 function getToday() { return new Date().toLocaleDateString("pt-BR"); }
 
+const ZAPI_INSTANCE = "3F3CE97D54D7521BD014BE824EEE0644";
+const ZAPI_TOKEN = "ACA1A0C6D5CDAD87A4F5ED87";
+
+async function enviarWhatsApp(whatsapp, mensagem) {
+  const numero = whatsapp.replace(/\D/g, "");
+  const fone = numero.length === 11 ? `55${numero}` : `55${numero}`;
+  try {
+    await fetch(`https://api.z-api.io/instances/${ZAPI_INSTANCE}/token/${ZAPI_TOKEN}/send-text`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: fone, message: mensagem }),
+    });
+  } catch(e) {
+    console.error("Erro Z-API:", e);
+  }
+}
+
 const GRUPOS = [
   { id:"ate18", label:"⏰ Até 18h", cor:"#1a73e8", corBg:"#e3f2fd" },
   { id:"apos18", label:"🌙 Após 18h", cor:"#7b1fa2", corBg:"#f3e5f5" },
@@ -130,6 +147,7 @@ export default function App() {
       const hora = new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
       const msgC = applyVars(msgConfirmSalva, cl, jaPageram, totalAtivos, hora);
       setDisparos(d=>[{id:Date.now()+cl.id,cliente:cl.nome,whatsapp:cl.whatsapp,valor:cl.valor,hora,grupo:cl.grupo,aviso:-1,mensagem:msgC},...d]);
+      enviarWhatsApp(cl.whatsapp, msgC);
 
       // avança parcela
       const novaParcela = (cl.parcelaAtual||1) + 1;
@@ -187,6 +205,7 @@ export default function App() {
       id:Date.now()+c.id,cliente:c.nome,whatsapp:c.whatsapp,valor:c.valor,hora,grupo:gid,aviso:avisoIdx,
       mensagem:applyVars(getMsgEfetiva(c,avisoIdx),c,0,0,hora),
     }));
+    novos.forEach(m => enviarWhatsApp(m.whatsapp, m.mensagem));
     setDisparos(d=>[...novos,...d]);
     showToast(`📤 ${ativos.length} mensagem(ns) — ${AVISO_LABELS[avisoIdx]} disparada(s)!`);
   }
